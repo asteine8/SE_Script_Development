@@ -20,8 +20,5 @@ void Main(string arg) {
     else {
         output += "Pos: No Panet Detected\n";
     }
-
-    
-
 }
 
