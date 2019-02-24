@@ -63,5 +63,7 @@ double GetMaxAccelerationAlongVector(IMyRemoteControl refRemote, double[] base6A
     Vector3D RefRightVect = refRemote.WorldMatrix.Right;
 
     // Apply scalar projection onto each vector, return opposite values if scalar is negative
+
+    
 }
 
