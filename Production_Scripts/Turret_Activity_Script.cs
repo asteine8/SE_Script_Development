@@ -90,7 +90,8 @@ void Main(string arg) {
 	}
 	
 	prevTargetDetected = targetDetected;
-	targetDetected = TargetDetected(detectorTurrets);
+	// targetDetected = TargetDetected(detectorTurrets);
+	targetDetected = TargetDetected2(detectorTurrets);
 
 	// Do edge detection to reduce block calls
 	if (targetDetected != prevTargetDetected) {
@@ -109,6 +110,16 @@ bool TargetDetected(List<IMyLargeTurretBase> turrets) {
 	for (int i = 0; i < turrets.Count; i++) {
 		MyDetectedEntityInfo turretTargetInfo = turrets[i].GetTargetedEntity();
 		if (turretTargetInfo.IsEmpty() == false) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool TargetDetected2(List<IMyLargeTurretBase> turrets) {
+	for (int i = 0; i < turrets.Count; i++) {
+		// MyDetectedEntityInfo turretTargetInfo = turrets[i].GetTargetedEntity();
+		if (turrets[i].HasTarget == true) {
 			return true;
 		}
 	}
