@@ -176,6 +176,7 @@ void Main(string arg) {
                         ApplyBlockStatesforAiStates(AiState);
                         ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
                     }
+                    else if ()
                         
                     else { // Fire mah lazor
                         CurrentRemote.SetAutoPilotEnabled(false); // Turn off the autopilot
@@ -229,7 +230,7 @@ void Main(string arg) {
                     List<MyWaypointInfo> Waypoints = new List<MyWaypointInfo>();
                     CurrentRemote.GetWaypointInfo(Waypoints); // Get list of waypoints to make sure we are going to one
                     Echo(Waypoints.Count.ToString());
-                    if (AtWaypoint(CurrentRemote, TargetPosition, DistanceToWaypointTolerance) || Waypoints.Count == 0) {
+                    if (AtWaypoint(CurrentRemote, TargetPosition, DistanceToWaypointTolerance) || Waypoints.Count == 0 || Vector3D.Distance(TargetPosition, CurrentRemote.GetPosition()) > MaxDetectionRange) {
                         if (r.NextDouble() < Chance2Primary) {
                             AiState = r.Next(1,4); // Either go to horsefly or retreat
                             ApplyBlockStatesforAiStates(AiState);
