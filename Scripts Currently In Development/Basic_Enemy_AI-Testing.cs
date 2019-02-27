@@ -66,6 +66,7 @@ Random r = new Random();
 int CurrentCameraIndex = 0;
 
 bool isRunning = true;
+bool hasPrimaryWeapon = true;
 
 int AiState = 0;
 /**
@@ -77,53 +78,58 @@ int AiState = 0;
  */
 
 public Program() {
-    // Get all remotes (Will use remote at index 0)
-    GridTerminalSystem.GetBlocksOfType(Remotes);
-    if (Remotes.Count < 1) {
-        isRunning = false;
-        return;
-    }
-    CurrentRemote = Remotes[0];
-
-    List<IMyBeacon> AllBeacons = new List<IMyBeacon>();
-    GridTerminalSystem.GetBlocksOfType(AllBeacons);
-    if (AllBeacons.Count < 1) {
-        isRunning = false;
-        return;
-    }
-    Beacon = AllBeacons[0];
-
-    GridTerminalSystem.GetBlocksOfType(Gyros);
-    if (Gyros.Count < 1) {
-        isRunning = false;
-        return;
-    }
-
-    // Get forward facing cameras for raycasting
-    List<IMyCameraBlock> AllCameras = new List<IMyCameraBlock>();
-    GridTerminalSystem.GetBlocksOfType(AllCameras);
-    if (AllCameras.Count < 1) {
-        isRunning = false;
-        return;
-    }
-    for (int i = 0; i < AllCameras.Count; i++) {
-        if (CurrentRemote.Orientation.Forward == AllCameras[i].Orientation.Forward) { // Pointed in the right direction
-            RaycastCameras.Add(AllCameras[i]);
-            AllCameras[i].EnableRaycast = true;
+    /*
+        // Get all remotes (Will use remote at index 0)
+        GridTerminalSystem.GetBlocksOfType(Remotes);
+        if (Remotes.Count < 1) {
+            isRunning = false;
+            return;
         }
-    }
-    if (RaycastCameras.Count < 1) {
-        isRunning = false;
-        return;
-    }
+        CurrentRemote = Remotes[0];
 
-    // Add weapons to primary weapon list if they are pointed in the same direction as the remote control
-    List<IMyUserControllableGun> AllWeapons = new List<IMyUserControllableGun>();
-    GridTerminalSystem.GetBlocksOfType(AllWeapons);
-    for (int i = 0; i < AllWeapons.Count; i++) {
-        if (CurrentRemote.Orientation.Forward == AllWeapons[i].Orientation.Forward) { // Pointed in the right direction
-            PrimaryWeapons.Add(AllWeapons[i]);
+        List<IMyBeacon> AllBeacons = new List<IMyBeacon>();
+        GridTerminalSystem.GetBlocksOfType(AllBeacons);
+        if (AllBeacons.Count < 1) {
+            isRunning = false;
+            return;
         }
+        Beacon = AllBeacons[0];
+
+        GridTerminalSystem.GetBlocksOfType(Gyros);
+        if (Gyros.Count < 1) {
+            isRunning = false;
+            return;
+        }
+
+        // Get forward facing cameras for raycasting
+        List<IMyCameraBlock> AllCameras = new List<IMyCameraBlock>();
+        GridTerminalSystem.GetBlocksOfType(AllCameras);
+        if (AllCameras.Count < 1) {
+            isRunning = false;
+            return;
+        }
+        for (int i = 0; i < AllCameras.Count; i++) {
+            if (CurrentRemote.Orientation.Forward == AllCameras[i].Orientation.Forward) { // Pointed in the right direction
+                RaycastCameras.Add(AllCameras[i]);
+                AllCameras[i].EnableRaycast = true;
+            }
+        }
+        if (RaycastCameras.Count < 1) {
+            isRunning = false;
+            return;
+        }
+
+        // Add weapons to primary weapon list if they are pointed in the same direction as the remote control
+        List<IMyUserControllableGun> AllWeapons = new List<IMyUserControllableGun>();
+        GridTerminalSystem.GetBlocksOfType(AllWeapons);
+        for (int i = 0; i < AllWeapons.Count; i++) {
+            if (CurrentRemote.Orientation.Forward == AllWeapons[i].Orientation.Forward) { // Pointed in the right direction
+                PrimaryWeapons.Add(AllWeapons[i]);
+            }
+        }
+    */
+    if (!UpdateBlocks()) { // Cannot run
+        isRunning = false;
     }
 
     // Setup Remote Control
@@ -151,137 +157,147 @@ void Main(string arg) {
     // AiState = 1;
     // ApplyBlockStatesforAiStates(1);
     if (isRunning) {
-        UpdateBeacon();
-
-        switch (AiState) {
-            case 0: // Passive
-                if (CurrentRemote.GetNearestPlayer(out LastKnownPlayerPosition) == true) {
-                    if (Vector3D.Distance(LastKnownPlayerPosition, CurrentRemote.GetPosition()) < MaxDetectionRange) {
-                        AiState = 2; // Horsefly
-                        ApplyBlockStatesforAiStates(AiState);
+        try {
+            UpdateBeacon();
+            switch (AiState) {
+                case 0: // Passive
+                    if (CurrentRemote.GetNearestPlayer(out LastKnownPlayerPosition) == true) {
+                        if (Vector3D.Distance(LastKnownPlayerPosition, CurrentRemote.GetPosition()) < MaxDetectionRange) {
+                            AiState = 2; // Horsefly
+                            ApplyBlockStatesforAiStates(AiState);
+                        }
                     }
-                }
-                break;
-            case 1: // Primary Attack
-                if (CurrentRemote.GetNearestPlayer(out LastKnownPlayerPosition) == true) {
-                    if (Vector3D.Distance(LastKnownPlayerPosition, CurrentRemote.GetPosition()) > MaxDetectionRange) {
-                        AiState = 0; // Go to passive, out of detection range
-                        ApplyBlockStatesforAiStates(AiState);
-                        ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
-                        break;
-                    }
+                    break;
+                case 1: // Primary Attack
+                    if (CurrentRemote.GetNearestPlayer(out LastKnownPlayerPosition) == true) {
+                        if (Vector3D.Distance(LastKnownPlayerPosition, CurrentRemote.GetPosition()) > MaxDetectionRange) {
+                            AiState = 0; // Go to passive, out of detection range
+                            ApplyBlockStatesforAiStates(AiState);
+                            ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
+                            break;
+                        }
 
-                    if (Vector3D.Distance(CurrentRemote.GetPosition(),LastKnownPlayerPosition) > MaxEngageRange) {
-                        AiState = 2; // Out of engagement range: go to horsefly mode
-                        ApplyBlockStatesforAiStates(AiState);
-                        ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
-                    }
-                    else if ()
-                        
-                    else { // Fire mah lazor
-                        CurrentRemote.SetAutoPilotEnabled(false); // Turn off the autopilot
-                        if (RaycastCameras[CurrentCameraIndex].CanScan(LastKnownPlayerPosition)) {
-                            MyDetectedEntityInfo raycastResult = RaycastCameras[CurrentCameraIndex].Raycast(LastKnownPlayerPosition);
-                            CurrentCameraIndex = (CurrentCameraIndex == RaycastCameras.Count-1) ? 0 : CurrentCameraIndex + 1;
+                        if (hasPrimaryWeapon == false) { // No primary weapon
+                            AiState = 2; // Go to horsefly
+                            ApplyBlockStatesforAiStates(AiState);
+                            break;
+                        }
 
-                            // We hit something and its an enemy!
-                            if (raycastResult.IsEmpty() == false && raycastResult.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies) {
-                                Vector3D target = GetTargetWithBasicLeading(CurrentRemote, raycastResult.HitPosition.Value, new Vector3D(raycastResult.Velocity), ProjectileVelocity);
-                                angleToTargetVector = Math.Acos(Vector3D.Dot(Vector3D.Normalize(target - CurrentRemote.GetPosition()), Vector3D.Normalize(CurrentRemote.WorldMatrix.Forward)));
+                        if (Vector3D.Distance(CurrentRemote.GetPosition(),LastKnownPlayerPosition) > MaxEngageRange) {
+                            AiState = 2; // Out of engagement range: go to horsefly mode
+                            ApplyBlockStatesforAiStates(AiState);
+                            ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
+                        }
+                        else { // Fire mah lazor
+                            CurrentRemote.SetAutoPilotEnabled(false); // Turn off the autopilot
+                            if (RaycastCameras[CurrentCameraIndex].CanScan(LastKnownPlayerPosition)) {
+                                MyDetectedEntityInfo raycastResult = RaycastCameras[CurrentCameraIndex].Raycast(LastKnownPlayerPosition);
+                                CurrentCameraIndex = (CurrentCameraIndex == RaycastCameras.Count-1) ? 0 : CurrentCameraIndex + 1;
 
-                                TurnToVector(target, RotationGain, Gyros, CurrentRemote, 0, MAX_ANGULAR_VELOCITY);
-                                
-                                if (angleToTargetVector < TargetingAngleTolerance) {
-                                    ShootWeapons(PrimaryWeapons, true);
+                                // We hit something and its an enemy!
+                                if (raycastResult.IsEmpty() == false && raycastResult.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies) {
+                                    Vector3D target = GetTargetWithBasicLeading(CurrentRemote, raycastResult.HitPosition.Value, new Vector3D(raycastResult.Velocity), ProjectileVelocity);
+                                    angleToTargetVector = Math.Acos(Vector3D.Dot(Vector3D.Normalize(target - CurrentRemote.GetPosition()), Vector3D.Normalize(CurrentRemote.WorldMatrix.Forward)));
+
+                                    TurnToVector(target, RotationGain, Gyros, CurrentRemote, 0, MAX_ANGULAR_VELOCITY);
+                                    
+                                    if (angleToTargetVector < TargetingAngleTolerance) {
+                                        ShootWeapons(PrimaryWeapons, true);
+                                    }
+                                    else {
+                                        ShootWeapons(PrimaryWeapons, false);
+                                    }
                                 }
                                 else {
-                                    ShootWeapons(PrimaryWeapons, false);
+                                    TurnToVector(LastKnownPlayerPosition, RotationGain, Gyros, CurrentRemote, 0, MAX_ANGULAR_VELOCITY);
                                 }
                             }
                             else {
                                 TurnToVector(LastKnownPlayerPosition, RotationGain, Gyros, CurrentRemote, 0, MAX_ANGULAR_VELOCITY);
                             }
+                            if (r.NextDouble() < Chance2BreakOff) { // Breakoff primary atack randomly
+                                AiState = r.Next(2,4); // Either go to horsefly or retreat
+                                ApplyBlockStatesforAiStates(AiState);
+                                ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
+                            }
                         }
-                        else {
-                            TurnToVector(LastKnownPlayerPosition, RotationGain, Gyros, CurrentRemote, 0, MAX_ANGULAR_VELOCITY);
-                        }
-                        if (r.NextDouble() < Chance2BreakOff) { // Breakoff primary atack randomly
-                            AiState = r.Next(2,4); // Either go to horsefly or retreat
+                        
+                    }
+                    else {
+                        AiState = 0;
+                        ApplyBlockStatesforAiStates(AiState);
+                        ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
+                    }
+                    break;
+                case 2: // Horsefly
+                    if (CurrentRemote.GetNearestPlayer(out LastKnownPlayerPosition) == true) {
+                        if (Vector3D.Distance(LastKnownPlayerPosition, CurrentRemote.GetPosition()) > MaxDetectionRange) {
+                            AiState = 0; // Passive
                             ApplyBlockStatesforAiStates(AiState);
-                            ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
+                            break;
+                        }
+
+                        List<MyWaypointInfo> Waypoints = new List<MyWaypointInfo>();
+                        CurrentRemote.GetWaypointInfo(Waypoints); // Get list of waypoints to make sure we are going to one
+                        Echo(Waypoints.Count.ToString());
+                        if (AtWaypoint(CurrentRemote, TargetPosition, DistanceToWaypointTolerance) || Waypoints.Count == 0 || Vector3D.Distance(TargetPosition, CurrentRemote.GetPosition()) > MaxDetectionRange) {
+                            if (r.NextDouble() < Chance2Primary) {
+                                AiState = r.Next(1,4); // Either go to horsefly or retreat
+                                ApplyBlockStatesforAiStates(AiState);
+                            }
+                            else { // Stay in horsefly and assign new waypoint
+                                Vector3D myPos = CurrentRemote.GetPosition();
+                                Vector3D myRight = (r.Next(0,2) == 0) ? CurrentRemote.WorldMatrix.Right : CurrentRemote.WorldMatrix.Up; // Add some basic varience
+
+                                Vector3D waypoint = Vector3D.Cross(myRight, LastKnownPlayerPosition - myPos);
+                                waypoint = (Vector3D.Normalize(waypoint) * ( (r.NextDouble() * (MaxEngageRange - MinEngageRange)) + MinEngageRange)) + LastKnownPlayerPosition;
+
+                                // Set waypoint into remote control
+                                CurrentRemote.ClearWaypoints();
+                                CurrentRemote.AddWaypoint(waypoint, "Target Location");
+                                CurrentRemote.SetAutoPilotEnabled(true);
+
+                                TargetPosition = waypoint;
+                            }
+                        }
+                        if (Waypoints.Count > 0) {
+                            CurrentRemote.SetAutoPilotEnabled(true);
                         }
                     }
-                    
-                }
-                else {
-                    AiState = 0;
-                    ApplyBlockStatesforAiStates(AiState);
-                    ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
-                }
-                break;
-            case 2: // Horsefly
-                if (CurrentRemote.GetNearestPlayer(out LastKnownPlayerPosition) == true) {
-                    if (Vector3D.Distance(LastKnownPlayerPosition, CurrentRemote.GetPosition()) > MaxDetectionRange) {
+                    else {
                         AiState = 0; // Passive
                         ApplyBlockStatesforAiStates(AiState);
-                        break;
                     }
+                    break;
+                case 3: // Retreat
+                    if (CurrentRemote.GetNearestPlayer(out LastKnownPlayerPosition) == true) {
+                        Vector3D MyPos = CurrentRemote.GetPosition();
+                        Vector3D card = (r.Next(0,2) == 0) ? CurrentRemote.WorldMatrix.Right : CurrentRemote.WorldMatrix.Up; // Add some basic varience
 
-                    List<MyWaypointInfo> Waypoints = new List<MyWaypointInfo>();
-                    CurrentRemote.GetWaypointInfo(Waypoints); // Get list of waypoints to make sure we are going to one
-                    Echo(Waypoints.Count.ToString());
-                    if (AtWaypoint(CurrentRemote, TargetPosition, DistanceToWaypointTolerance) || Waypoints.Count == 0 || Vector3D.Distance(TargetPosition, CurrentRemote.GetPosition()) > MaxDetectionRange) {
-                        if (r.NextDouble() < Chance2Primary) {
-                            AiState = r.Next(1,4); // Either go to horsefly or retreat
-                            ApplyBlockStatesforAiStates(AiState);
-                        }
-                        else { // Stay in horsefly and assign new waypoint
-                            Vector3D myPos = CurrentRemote.GetPosition();
-                            Vector3D myRight = (r.Next(0,2) == 0) ? CurrentRemote.WorldMatrix.Right : CurrentRemote.WorldMatrix.Up; // Add some basic varience
+                        Vector3D Rwaypoint = Vector3D.Cross(card, LastKnownPlayerPosition - MyPos);
+                        Rwaypoint = (Vector3D.Normalize(Rwaypoint) * RetreatRange) + LastKnownPlayerPosition;
 
-                            Vector3D waypoint = Vector3D.Cross(myRight, LastKnownPlayerPosition - myPos);
-                            waypoint = (Vector3D.Normalize(waypoint) * ( (r.NextDouble() * (MaxEngageRange - MinEngageRange)) + MinEngageRange)) + LastKnownPlayerPosition;
-
-                            // Set waypoint into remote control
-                            CurrentRemote.ClearWaypoints();
-                            CurrentRemote.AddWaypoint(waypoint, "Target Location");
-                            CurrentRemote.SetAutoPilotEnabled(true);
-
-                            TargetPosition = waypoint;
-                        }
-                    }
-                    if (Waypoints.Count > 0) {
+                        // Set waypoint into remote control
+                        CurrentRemote.ClearWaypoints();
+                        CurrentRemote.AddWaypoint(Rwaypoint, "Target Location");
                         CurrentRemote.SetAutoPilotEnabled(true);
+
+                        AiState = 2; // Horsefly
+                        ApplyBlockStatesforAiStates(AiState);
+
+                        TargetPosition = Rwaypoint;
                     }
-                }
-                else {
-                    AiState = 0; // Passive
-                    ApplyBlockStatesforAiStates(AiState);
-                }
-                break;
-            case 3: // Retreat
-                if (CurrentRemote.GetNearestPlayer(out LastKnownPlayerPosition) == true) {
-                    Vector3D MyPos = CurrentRemote.GetPosition();
-                    Vector3D card = (r.Next(0,2) == 0) ? CurrentRemote.WorldMatrix.Right : CurrentRemote.WorldMatrix.Up; // Add some basic varience
-
-                    Vector3D Rwaypoint = Vector3D.Cross(card, LastKnownPlayerPosition - MyPos);
-                    Rwaypoint = (Vector3D.Normalize(Rwaypoint) * RetreatRange) + LastKnownPlayerPosition;
-
-                    // Set waypoint into remote control
-                    CurrentRemote.ClearWaypoints();
-                    CurrentRemote.AddWaypoint(Rwaypoint, "Target Location");
-                    CurrentRemote.SetAutoPilotEnabled(true);
-
-                    AiState = 2; // Horsefly
-                    ApplyBlockStatesforAiStates(AiState);
-
-                    TargetPosition = Rwaypoint;
-                }
-                else {
-                    AiState = 0; // Passive
-                    ApplyBlockStatesforAiStates(AiState);
-                }
-                break;
+                    else {
+                        AiState = 0; // Passive
+                        ApplyBlockStatesforAiStates(AiState);
+                    }
+                    break;
+            }
+        }
+        catch {
+            if (!UpdateBlocks()) { // Cannot run
+                isRunning = false;
+            }
         }
     }
     else {
@@ -404,4 +420,98 @@ void UpdateBeacon() {
             break;
     }
     Beacon.CustomName = beaconText;
+}
+
+bool UpdateBlocks() {
+
+    int cIndex = 0;
+    // Get all remotes (Will use remote at index 0)
+    GridTerminalSystem.GetBlocksOfType(Remotes);
+    if (Remotes.Count < 1) {
+        return false;
+    }
+    while(cIndex < Remotes.Count) {
+        if (Remotes[cIndex].IsFunctional && Remotes[cIndex].IsWorking) {
+            CurrentRemote = Remotes[cIndex];
+            break;
+        }
+        cIndex ++;
+    }
+    if (cIndex = Remotes.Count) {
+        AllBlocksAvailible = false;
+        return false;
+    }
+
+
+    cIndex = 0;
+    List<IMyBeacon> AllBeacons = new List<IMyBeacon>();
+    GridTerminalSystem.GetBlocksOfType(AllBeacons);
+    if (AllBeacons.Count < 1) {
+        AllBlocksAvailible = false;
+        return false;
+    }
+    while(cIndex < AllBeacons.Count) {
+        if (AllBeacons[cIndex].IsFunctional && AllBeacons[cIndex].IsWorking) {
+            Beacon = AllBeacons[cIndex];
+            break;
+        }
+        cIndex ++;
+    }
+    if (cIndex = AllBeacons.Count) {
+        AllBlocksAvailible = false;
+        return false;
+    }
+
+
+    GridTerminalSystem.GetBlocksOfType(Gyros);
+    if (Gyros.Count < 1) {
+        return false;
+    }
+
+
+    // Get forward facing cameras for raycasting
+    List<IMyCameraBlock> AllCameras = new List<IMyCameraBlock>();
+    GridTerminalSystem.GetBlocksOfType(AllCameras);
+    if (AllCameras.Count < 1) {
+        hasPrimaryWeapon = false;
+    }
+    for (int i = 0; i < AllCameras.Count; i++) {
+        if (CurrentRemote.Orientation.Forward == AllCameras[i].Orientation.Forward && AllCameras.IsFunctional && AllCameras.IsWorking) { // Pointed in the right direction
+            RaycastCameras.Add(AllCameras[i]);
+            AllCameras[i].EnableRaycast = true;
+        }
+    }
+    if (RaycastCameras.Count < 1) {
+        hasPrimaryWeapon = false;
+    }
+
+    // Add weapons to primary weapon list if they are pointed in the same direction as the remote control
+    List<IMyUserControllableGun> AllWeapons = new List<IMyUserControllableGun>();
+    GridTerminalSystem.GetBlocksOfType(AllWeapons);
+    for (int i = 0; i < AllWeapons.Count; i++) {
+        if (CurrentRemote.Orientation.Forward == AllWeapons[i].Orientation.Forward) { // Pointed in the right direction
+            PrimaryWeapons.Add(AllWeapons[i]);
+        }
+    }
+    if (PrimaryWeapons.Count == 0) {
+        hasPrimaryWeapon = false;
+    }
+
+    // Setup Remote Control
+    CurrentRemote.SpeedLimit = 100f; // Max
+    CurrentRemote.ClearWaypoints(); // Reset
+    // CurrentRemote.AddWaypoint(CurrentRemote.GetPosition()+ (new Vector3D(100,0,0)), "Initial Position");
+    CurrentRemote.SetAutoPilotEnabled(false);
+
+    CurrentRemote.FlightMode = FlightMode.OneWay; // Set flightmode to one way
+    CurrentRemote.SetDockingMode(false); // Don't need to be careful
+    CurrentRemote.SetCollisionAvoidance(false); // It sucks
+    // Setup Beacon
+    Beacon.Radius = 50000f; // Max range
+
+    ShootWeapons(PrimaryWeapons, false); // Don't keep shooting for reasons
+
+    ApplyBlockStatesforAiStates(0);
+
+    AiState = 0;
 }
