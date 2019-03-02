@@ -36,7 +36,7 @@ public Program() {
     
     SetCameraRaycastingState(RaycastingCameras, true); // Enable camera raycasting
 
-    Runtime.UpdateFrequency = UpdateFrequency.Update10; // Update at 6Hz
+    Runtime.UpdateFrequency = UpdateFrequency.Update10; // Update at 0.6Hz
 }
 
 void Main(string arg) {
@@ -70,6 +70,13 @@ void Main(string arg) {
  */
 MyDetectedEntityInfo RaycastScanForTarget(IMyRemoteControl REF_RC, List<IMyCameraBlock> Cameras, double targetDistance, double netSeperation, double maxCasts) {
     // Placeholder (Because actually doing what this function says its going to do is hard and I value my sanity)
+    MyDetectedEntityInfo RaycastResult = Cameras[camIndex++].Raycast(targetDistance);
+    if (camIndex == Cameras.Count) camIndex = 0;
+    return RaycastResult;
+}
+
+// Raycast forwards by target distance from a raycasting camera
+MyDetectedEntityInfo RaycastForward(IMyRemoteControl REF_RC, List<IMyCameraBlock> Cameras, double targetDistace) {
     MyDetectedEntityInfo RaycastResult = Cameras[camIndex++].Raycast(targetDistance);
     if (camIndex == Cameras.Count) camIndex = 0;
     return RaycastResult;
