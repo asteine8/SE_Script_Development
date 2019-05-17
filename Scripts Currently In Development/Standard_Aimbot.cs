@@ -12,8 +12,8 @@
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 // Raycast Config
-int NUM_RUNS_PER_RAYCAST_TRACK = 3; // Run raycast tracking every x main method calls
-double MAX_RAYCAST_RANGE = 3500; // Maximum distance a camera can raycast (meters)
+int NUM_RUNS_PER_RAYCAST_TRACK = 2; // Run raycast tracking every x main method calls
+double MAX_RAYCAST_RANGE = 2000; // Maximum distance a camera can raycast (meters)
 
 double RAYCAST_NET_SEPERATION = 5; // meters
 double MAX_CASTS_IN_NET = 10; // Maximum casts in detection scan net
@@ -23,7 +23,7 @@ double GAIN = 5;
 double MAX_ANGULAR_VELOCITY = 10;
 
 // Weapon Config
-double MUZZEL_VELOCITY = 100; // (m/s) [400=gatling,100=missile]
+double MUZZEL_VELOCITY = 200; // (m/s) [400=gatling,200=missile]
 double MAX_DEGREES_TO_FIRE = 2.5; // How many degrees the ship can be pointed off from the target orientation to be able to fire
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -77,20 +77,24 @@ void Main(string arg) {
             if (!AssignBlocks()) programRunnable = false; // Reassignment failed - stop executing
         }
 
-        // Only accept enemies as targets
         if (!ScanResult.IsEmpty() && ScanResult.Relationship == MyRelationsBetweenPlayerAndBlock.Enemies) { // Lets-a-go!
             LastRaycastInfo = ScanResult;
             ApplyStateToGyroOverrides(Gyros, true); // Enable gyro control
 
             timeSinceLastRaycast = 0; // Reset time since we now have a new valid target
+            raycastTrackerCount = 0;
 
             programState = 1; // Track the target
             Runtime.UpdateFrequency = UpdateFrequency.Update10; // Update at 0.6Hz
+        }
+        else {
+            LastRaycastInfo = new MyDetectedEntityInfo();
         }
     }
     else if (arg == "OFF") { // Turn off tracking
         programState = 0; // Just goto passive
         ShootWeapons(PrimaryWeapons, false);
+        ApplyStateToGyroOverrides(Gyros, false);
     }
     else if (arg == "AUTOFIRE_ON") { // Turn on autofire
         fireWeapons = true;
@@ -110,10 +114,13 @@ void Main(string arg) {
 
 
     if (programRunnable) {
+        if (LastRaycastInfo.IsEmpty()) programState = 0;
+
         switch (programState) {
             case 0: // Passive state
                 Runtime.UpdateFrequency = UpdateFrequency.None; // Don't waste processing power on empty runs
-                // Do nothing... lol
+                ShootWeapons(PrimaryWeapons, false);
+                ApplyStateToGyroOverrides(Gyros, false);
                 break;
             case 1: // Track target
                 timeSinceLastRaycast += Runtime.TimeSinceLastRun.TotalSeconds; // Add time since last raycast
@@ -134,15 +141,19 @@ void Main(string arg) {
 
                         LastRaycastInfo = RaycastResult;
                     }
-                    else if (RaycastResult.IsEmpty()) LastRaycastInfo = RaycastResult; // Stop false positives
+                    else if (RaycastResult.IsEmpty()) {
+                        LastRaycastInfo = RaycastResult; // Stop false positives
+                        ApplyStateToGyroOverrides(Gyros, false); // Stop gyro control since there is nothing to look at
+                        ShootWeapons(PrimaryWeapons, false);
+                    }
                     
                     raycastTrackerCount = 0; // Reset timer
                 }
 
 
                 // Do things if we actually have a target
-                if (!RaycastResult.IsEmpty()) {
-                    
+                if (!LastRaycastInfo.IsEmpty()) {
+
                     // Point at target
                     Vector3D launchDirection = Get1stOrderLaunchVector(ReferenceRemote, LastRaycastInfo.HitPosition.Value, LastRaycastInfo.Velocity, MUZZEL_VELOCITY);
                     Vector3D targetPos = ReferenceRemote.GetPosition() + (launchDirection * 1000);
@@ -303,6 +314,7 @@ Vector3D Get1stOrderLaunchVector(IMyRemoteControl REF_RC, Vector3D St, Vector3D 
     }
     else { // Both positive roots
         t = (t1 < t2) ? t1 : t2; // Get the smaller of the two
+        // t = (t1 < t2) ? t2 : t1; // Get the larger of the two
     }
 
     Vector3D VelLaunch = (St-Sp)/t + Vt - Vp;
