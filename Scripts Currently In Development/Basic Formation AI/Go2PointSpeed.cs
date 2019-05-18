@@ -1,5 +1,6 @@
-const double tAcc = 10; // Time to accelerate (Seconds)
+const double tAcc = 2; // Time to accelerate (Seconds)
 const double maxSpeed = 100; // Max speed
+const double dampeningRadius = 10; // Reduce thruster strength in this radius to reduce occilations
 
 IMyShipController Reference;
 List<IMyThrust> thrusters = new List<IMyThrust>();
@@ -17,7 +18,7 @@ string lcdText;
 
 // GPS:Target Pos:-14448.55:-19846.87:-7071.89:
 Vector3D testDestination = new Vector3D(-14448.55, -19846.87, -7071.89);
-double testSpeed = 0;
+double testSpeed = 50;
 
 public Program() {
     GridTerminalSystem.GetBlocksOfType(thrusters);
@@ -32,6 +33,8 @@ public void Main(string arg) {
     lcdText = "";
 
     maxThrustAxes = GetMaxAccelerations(Reference, thrusters, (double)Reference.CalculateShipMass().PhysicalMass); // ~50ns
+
+    lcdText += "ShipMass = " + Reference.CalculateShipMass().PhysicalMass.ToString("0.00") + "\n";
 
     Go2PointSpeed(Reference, thrusters, maxThrustAxes, testDestination, testSpeed);
 
@@ -58,27 +61,37 @@ public void Go2PointSpeed(IMyShipController REFERENCE, List<IMyThrust> thrusters
     lcdText += "Skew Accel: " + aSkew.ToString("0.00") + "\n";
 
     // Calculate minimum distance to stop given current acceleration vector and velocity
-    double dStop = (Math.Pow(targetSpeed, 2) - Math.Pow(ScalarProjection(shipVelocity, vector2Target), 2)) / GetMaxAccelerationAlongAxis(REFERENCE, maxThrustAxes, -vector2Target);
+    // Make give us a little less acceleration than we actually have to be safe
+    double accelAlongAxis = (0.90 * GetMaxAccelerationAlongAxis(REFERENCE, maxThrustAxes, -vector2Target)) - ScalarProjection(gravity, vector2Target);
+    double dStop = (Math.Pow(targetSpeed, 2) - Math.Pow(ScalarProjection(shipVelocity, vector2Target), 2)) / (2 * accelAlongAxis);
     lcdText += "dStop: " + dStop.ToString("0.00") + "\n";
+    lcdText += "axisAccel=" + GetMaxAccelerationAlongAxis(REFERENCE, maxThrustAxes, -vector2Target).ToString("0.00") + "\n";
 
     // Calculate acceleration towards target position and velocity
     Vector3D aAccel;
     // Check if we need to deaccelerate rn
-    if (Math.Abs(dStop) >= vector2Target.Length()) { // deaccelerate
+    if (Math.Abs(dStop) >= vector2Target.Length() && ScalarProjection(shipVelocity, vector2Target) > 0) { // deaccelerate
         aAccel = -shipVelocity / tAcc;
+        lcdText += "Deaccelerating\n";
     }
     else { // accelerate
         double aAccelScale = (maxSpeed - ScalarProjection(shipVelocity, vector2Target)) / tAcc;
         aAccel = aAccelScale * Vector3D.Normalize(vector2Target);
+        lcdText += "Accelerating\n";
     }
     lcdText += "To Target Accel: " + aAccel.ToString("0.00") + "\n";
     
     // Sum vectors and calculate final acceleration vector
     Vector3D shipAccel = aSkew + aAccel + (-gravity);
 
+    // Turn off overrides to stop
+    if (targetSpeed == 0 && vector2Target.Length() < dampeningRadius) {
+        shipAccel = Vector3D.Zero;
+    }
+
     lcdText += "Total Accel: " + shipAccel.ToString("0.00") + "\n";
 
-    ApplyAccelerationToThrusters(REFERENCE, maxThrustAxes, -shipAccel);
+    ApplyAccelerationToThrusters(REFERENCE, maxThrustAxes, shipAccel);
 }
 
 /**
@@ -131,27 +144,27 @@ public double[] GetMaxAccelerations(IMyShipController REFERENCE, List<IMyThrust>
     rightThrusters = new List<IMyThrust>();
 
     for (int i = 0; i < thrusters.Count; i++) {
-        if (thrusters[i].Orientation.Forward == refForward) {
+        if (thrusters[i].Orientation.Forward == refBackward) {
             maxThrust[0] += (double)thrusters[i].MaxEffectiveThrust;
             forwardThrusters.Add(thrusters[i]);
         }
-        else if (thrusters[i].Orientation.Forward == refBackward) {
+        else if (thrusters[i].Orientation.Forward == refForward) {
             maxThrust[1] += (double)thrusters[i].MaxEffectiveThrust;
             backwardThrusters.Add(thrusters[i]);
         }
-        else if (thrusters[i].Orientation.Forward == refLeft) {
+        else if (thrusters[i].Orientation.Forward == refRight) {
             maxThrust[2] += (double)thrusters[i].MaxEffectiveThrust;
             leftThrusters.Add(thrusters[i]);
         }
-        else if (thrusters[i].Orientation.Forward == refRight) {
+        else if (thrusters[i].Orientation.Forward == refLeft) {
             maxThrust[3] += (double)thrusters[i].MaxEffectiveThrust;
             rightThrusters.Add(thrusters[i]);
         }
-        else if (thrusters[i].Orientation.Forward == refUp) {
+        else if (thrusters[i].Orientation.Forward == refDown) {
             maxThrust[4] += (double)thrusters[i].MaxEffectiveThrust;
             upThrusters.Add(thrusters[i]);
         }
-        else if (thrusters[i].Orientation.Forward == refDown) {
+        else if (thrusters[i].Orientation.Forward == refUp) {
             maxThrust[5] += (double)thrusters[i].MaxEffectiveThrust;
             downThrusters.Add(thrusters[i]);
         }
@@ -184,10 +197,10 @@ public void ApplyAccelerationToThrusters(IMyShipController REFERENCE, double[] m
     double leftTargetAccel = ScalarProjection(accel, REFERENCE.WorldMatrix.Left);
     double upTargetAccel = ScalarProjection(accel, REFERENCE.WorldMatrix.Up);
 
-    lcdText += "\n++Aligned Accels:";
+    lcdText += "\n++Aligned Accels:\n";
     lcdText += "forward=" + forwardTargetAccel.ToString("0.00") + "\n";
-    lcdText += "up=" + forwardTargetAccel.ToString("0.00") + "\n";
-    lcdText += "left=" + forwardTargetAccel.ToString("0.00") + "\n";
+    lcdText += "up=" + upTargetAccel.ToString("0.00") + "\n";
+    lcdText += "left=" + leftTargetAccel.ToString("0.00") + "\n";
 
     if (forwardTargetAccel > 0) {
         double forwardOverridePercent = forwardTargetAccel/maxThrustAxes[0];
@@ -195,12 +208,18 @@ public void ApplyAccelerationToThrusters(IMyShipController REFERENCE, double[] m
         foreach(IMyThrust forwardThruster in forwardThrusters) {
             forwardThruster.ThrustOverridePercentage = (float)forwardOverridePercent;
         }
+        foreach(IMyThrust backwardThruster in backwardThrusters) {
+            backwardThruster.ThrustOverridePercentage = 0;
+        }
     }
     else {
         double backwardOverridePercent = -forwardTargetAccel/maxThrustAxes[1];
         backwardOverridePercent = (backwardOverridePercent > 1) ? 1 : backwardOverridePercent;
         foreach(IMyThrust backwardThruster in backwardThrusters) {
             backwardThruster.ThrustOverridePercentage = (float)backwardOverridePercent;
+        }
+        foreach(IMyThrust forwardThruster in forwardThrusters) {
+            forwardThruster.ThrustOverridePercentage = 0;
         }
     }
 
@@ -210,12 +229,18 @@ public void ApplyAccelerationToThrusters(IMyShipController REFERENCE, double[] m
         foreach(IMyThrust leftThruster in leftThrusters) {
             leftThruster.ThrustOverridePercentage = (float)leftOverridePercent;
         }
+        foreach(IMyThrust rightThruster in rightThrusters) {
+            rightThruster.ThrustOverridePercentage = 0;
+        }
     }
     else {
         double rightOverridePercent = -leftTargetAccel/maxThrustAxes[3];
         rightOverridePercent = (rightOverridePercent > 1) ? 1 : rightOverridePercent;
         foreach(IMyThrust rightThruster in rightThrusters) {
             rightThruster.ThrustOverridePercentage = (float)rightOverridePercent;
+        }
+        foreach(IMyThrust leftThruster in leftThrusters) {
+            leftThruster.ThrustOverridePercentage = 0;
         }
     }
 
@@ -225,12 +250,18 @@ public void ApplyAccelerationToThrusters(IMyShipController REFERENCE, double[] m
         foreach(IMyThrust upThruster in upThrusters) {
             upThruster.ThrustOverridePercentage = (float)upOverridePercent;
         }
+        foreach(IMyThrust downThruster in downThrusters) {
+            downThruster.ThrustOverridePercentage = 0;
+        }
     }
     else {
         double downOverridePercent = -upTargetAccel/maxThrustAxes[5];
         downOverridePercent = (downOverridePercent > 1) ? 1 : downOverridePercent;
         foreach(IMyThrust downThruster in downThrusters) {
             downThruster.ThrustOverridePercentage = (float)downOverridePercent;
+        }
+        foreach(IMyThrust upThruster in upThrusters) {
+            upThruster.ThrustOverridePercentage = 0;
         }
     }
 }
