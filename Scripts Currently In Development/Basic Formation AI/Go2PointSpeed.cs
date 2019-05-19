@@ -18,7 +18,7 @@ string lcdText;
 
 // GPS:Target Pos:-14448.55:-19846.87:-7071.89:
 Vector3D testDestination = new Vector3D(-14448.55, -19846.87, -7071.89);
-double testSpeed = 50;
+double testSpeed = 0;
 
 public Program() {
     GridTerminalSystem.GetBlocksOfType(thrusters);
@@ -26,15 +26,15 @@ public Program() {
 
     debugLCD = GridTerminalSystem.GetBlockWithName("Debug LCD") as IMyTextPanel;
 
-    Runtime.UpdateFrequency = UpdateFrequency.Update10; // Update at 6Hz
-}
-
-public void Main(string arg) {
-    lcdText = "";
+    Runtime.UpdateFrequency = UpdateFrequency.Update10; // Update at 0.6Hz
 
     maxThrustAxes = GetMaxAccelerations(Reference, thrusters, (double)Reference.CalculateShipMass().PhysicalMass); // ~50ns
 
     lcdText += "ShipMass = " + Reference.CalculateShipMass().PhysicalMass.ToString("0.00") + "\n";
+}
+
+public void Main(string arg) {
+    lcdText = "";
 
     Go2PointSpeed(Reference, thrusters, maxThrustAxes, testDestination, testSpeed);
 
