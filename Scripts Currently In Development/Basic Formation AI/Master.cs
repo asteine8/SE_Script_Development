@@ -7,6 +7,7 @@
 // Block id tags (Should be in custom data)
 public const string shipControllerTag = "Ship Controller";
 public const string antennaTag = "Broadcasting Antenna";
+public const string lcdTag = "LCD";
 
 // Group Frequency (What this group's communication's are encoded with)
 public const string GROUP_FREQUENCY = "123"; // Lets keep this at three characters
@@ -22,11 +23,14 @@ bool isRunning = true;
 
 IMyShipController Reference;
 IMyRadioAntenna Antenna;
+List<IMyTextPanel> displayLCDs = new List<IMyTextPanel>();
 
 IMyBroadcastListener BroadcastListener;
 
 List<long> droneIds = new List<long>();
 List<Drone> Drones = new List<Drone>();
+
+List<string> displayLines = new List<string>();
 
 int clk = 0;
 
@@ -40,7 +44,9 @@ public class Drone {
 }
 
 public Program() {
-    UpdateBlocks();
+    if (UpdateBlocks()) {
+        
+    }
 }
 
 void Main(string arg) {
@@ -73,6 +79,16 @@ bool UpdateBlocks() {
         else if (i == shipControllers.Count - 1) {
             // if on last item and no ship controllers are usable, we can't run this script
             return false;
+        }
+    }
+
+    // Get lcds (Not required)
+    List<IMyTextPanel> lcds = new List<IMyTextPanel>();
+    displayLCDs = new List<IMyTextPanel>();
+    GridTerminalSystem.GetBlocksOfType(lcds);
+    for (int i = 0; i < lcds.Count; i++) {
+        if (lcds[i].CustomData.ToLower.Contains(lcdTag.ToLower())) {
+            displayLCDs.Add(lcds[i]);
         }
     }
     
@@ -177,4 +193,12 @@ void UnicastToDrones(IMyShipController REFERENCE) {
             UnregisterDrone(drone.EntityId);
         }
     }
+}
+
+/**
+ * Write some basic information to display LCDs so the user knows what this script is doing
+ */
+void UpdateDisplay() {
+    // Skip this if there are no acceptable lcds onboard
+    if (displayLCDs.Count == 0) return;
 }
