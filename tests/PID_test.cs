@@ -1,3 +1,24 @@
+List<IMyGyro> Gyros = new List<IMyGyro>();
+IMyRemoteControl Remote;
+IMyTextPanel LCD;
+
+QuaternionD home;
+
+public Program() {
+    GridTerminalSystem.GetBlocksOfType(Gyros);
+    Remote = GridTerminalSystem.GetBlockWithName("Remote Control") as IMyRemoteControl;
+    LCD = GridTerminalSystem.GetBlockWithName("LCD") as IMyTextPanel;
+
+    Runtime.UpdateFrequency = UpdateFrequency.Update10; // Set update frequency to every 10 ticks
+
+    home = QuaternionD.CreateFromForwardUp(Remote.WorldMatrix.Forward, Remote.WorldMatrix.Up);
+}
+
+public void Main(string arg) {
+    TurnToQuaternion(home, Gyros, Remote, 2, 2, 5);
+}
+
+
 /* Modified Gyro Rotation Script:
     Base code from RDav.
     Modified to use quaternions instead of a target position
@@ -23,18 +44,24 @@ void TurnToQuaternion(QuaternionD TargetO, List<IMyGyro> Gyros, IMyRemoteControl
     double ShipForwardAzimuth = 0; double ShipForwardElevation = 0;
     Vector3D.GetAzimuthAndElevation(RCReferenceFrameVector, out ShipForwardAzimuth, out ShipForwardElevation);
 
+
+    string a = "Az: " + ShipForwardAzimuth.ToString("0.00") + "\nEl: " 
+                        + ShipForwardElevation.ToString("0.00") + "\n" + 
+                        (InvQuat-TargetOrientation).ToString("0.00");
+    Echo(a);
+    LCD.WriteText(a);
+
     //Does Some Rotations To Provide For any Gyro-Orientation
-    var RC_Matrix = REF_RC.WorldMatrix.GetOrientation();
-    var Vector = Vector3.Transform((new Vector3D(ShipForwardElevation, ShipForwardAzimuth, ROLLANGLE)), RC_Matrix); //Converts To World
+    MatrixD RC_Matrix = REF_RC.WorldMatrix.GetOrientation();
+    Vector3 Vector = Vector3.Transform((new Vector3D(ShipForwardElevation, ShipForwardAzimuth, ROLLANGLE)), RC_Matrix); //Converts To World
 
     for (int i = 0; i < Gyros.Count; i++) {
-        var TRANS_VECT = Vector3.Transform(Vector, Matrix.Transpose(Gyros[i].WorldMatrix.GetOrientation()));  //Converts To Gyro Local
+        Vector3 TRANS_VECT = Vector3.Transform(Vector, Matrix.Transpose(Gyros[i].WorldMatrix.GetOrientation()));  //Converts To Gyro Local
 
         //Applies To Scenario
         Gyros[i].Pitch = (float)MathHelper.Clamp((-TRANS_VECT.X * GAIN), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
         Gyros[i].Yaw = (float)MathHelper.Clamp(((-TRANS_VECT.Y) * GAIN), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
         Gyros[i].Roll = (float)MathHelper.Clamp(((-TRANS_VECT.Z) * RollGain), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
-        // Gyros[i].GyroOverride = true;
     }
 }
 
