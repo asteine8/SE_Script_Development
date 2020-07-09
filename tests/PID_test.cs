@@ -4,6 +4,47 @@ IMyTextPanel LCD;
 
 QuaternionD home;
 
+
+// Values for PID controller
+class PID3 {
+    public Vector3 PrevError;
+    public Vector3 PrevIError;
+    public float iterationTime = 0.167F; // Seconds
+
+    public float pTerm;
+    public float dTerm;
+    public float iTerm;
+
+    private Vector3 IError;
+
+    public PID3(float pT, float iT, float dT) {
+        pTerm = pT;
+        iTerm = iT;
+        dTerm = dT;
+
+        PrevIError = Vector3.Zero;
+        PrevError = Vector3.Zero;
+    }
+
+    public Vector3 CalcResponse(Vector3 CurrentError) {
+        Vector3 output = Vector3.Zero;
+
+        // Porportional Term:
+        output += CurrentError * pTerm;
+        // Derivative Term:
+        output += ((CurrentError - PrevError) / iterationTime) * dTerm;
+        // Integral Term:
+        IError = PrevIError + (CurrentError * iterationTime);
+        PrevIError = IError;
+        output += IError * iTerm;
+
+        PrevError = CurrentError;
+        return output;
+    }
+}
+
+PID3 pidController;
+
 public Program() {
     GridTerminalSystem.GetBlocksOfType(Gyros);
     Remote = GridTerminalSystem.GetBlockWithName("Remote Control") as IMyRemoteControl;
@@ -12,10 +53,12 @@ public Program() {
     Runtime.UpdateFrequency = UpdateFrequency.Update10; // Set update frequency to every 10 ticks
 
     home = QuaternionD.CreateFromForwardUp(Remote.WorldMatrix.Forward, Remote.WorldMatrix.Up);
+
+    pidController = new PID3(5F,0F,1.3F);
 }
 
 public void Main(string arg) {
-    TurnToQuaternion(home, Gyros, Remote, 2, 2, 5);
+    TurnToQuaternion(home, Gyros, Remote, 1, 1, 3);
 }
 
 
@@ -54,6 +97,8 @@ void TurnToQuaternion(QuaternionD TargetO, List<IMyGyro> Gyros, IMyRemoteControl
     //Does Some Rotations To Provide For any Gyro-Orientation
     MatrixD RC_Matrix = REF_RC.WorldMatrix.GetOrientation();
     Vector3 Vector = Vector3.Transform((new Vector3D(ShipForwardElevation, ShipForwardAzimuth, ROLLANGLE)), RC_Matrix); //Converts To World
+
+    Vector = pidController.CalcResponse(Vector);
 
     for (int i = 0; i < Gyros.Count; i++) {
         Vector3 TRANS_VECT = Vector3.Transform(Vector, Matrix.Transpose(Gyros[i].WorldMatrix.GetOrientation()));  //Converts To Gyro Local
