@@ -10,11 +10,13 @@ double GAME_MAX_SPEED = 100; // Max Speed in map (Just put the fasted speed here
 // Text that block names MUST contain to be tagged
 const string REF_CONTROLLER_TAG = "<reference>";
 const string TARG_SPEAKER_TAG = "<targ_speaker>";
+const string TURRET_DESIGNATOR_TAG = "<designator>";
+const string LCD_TAG = "<lcd>";
 
 // +++++ Raycasting +++++
-float RAYCAST_SCAN_DEGREE_DEVIATION = 1F; // Degree deviation between raycasts in a raycast scan. Set small for fighters!
+float RAYCAST_SCAN_DEGREE_DEVIATION = 0.2F; // Degree deviation between raycasts in a raycast scan. Set small for fighters!
 int RAYCAST_SCAN_RADIUS = 2; // "Radius" of the square of raycast scans (ie: a radius of two creates a 3x3 raycast scan grid)
-double MAX_RAYCAST_RANGE = 1500; // Maximum distance a camera can raycast (meters)
+double MAX_RAYCAST_RANGE = 1000; // Maximum distance a camera can raycast (meters)
 int RAYCASTING_PERIOD = 2; // How many calls to wait between raycasting
 
 #endregion
@@ -23,12 +25,20 @@ int RAYCASTING_PERIOD = 2; // How many calls to wait between raycasting
 
 // +++++ Blocks +++++
 List<IMyCameraBlock> Cameras = new List<IMyCameraBlock>();
-IMyShipController ReferenceControl;
+List<IMyLargeTurretBase> DesignatorTurrets = new List<IMyLargeTurretBase>();
+List<IMyGyro> Gyros = new List<IMyGyro>();
+
+IMyShipController ReferenceControl; bool HAS_REFERENCE_CONTROLLER = false;
 IMySoundBlock TargetingSpeaker;
 
 // +++++ General +++++
 const double UPDATE_FREQUENCY = 0.167;
 const double UPDATES_PER_SECOND = 6;
+
+bool systemOperational = false; // The BIG one!
+
+int blockUpdateCycleCount = 0;
+const int CYCLES_FOR_BLOCK_UPDATE = 36;
 
 bool TARGET_LOCK = false; // If we have a target lock
 bool AIMBOT_ENABLED = false; // If we are doing gyro control or not
@@ -41,11 +51,22 @@ MyDetectedEntityInfo prevTargetInfo;
 int raycastCycleCount = 0;
 double timeSinceLastRaycast = 0;
 bool RAYCASTING_ENABLED = false;
+bool RAYCAST_POSSIBLE = false;
 int camIndex = 0;
+
+// +++++ Turret Tracking +++++
+bool TURRET_TRACKING_ENABLED = false;
+bool TURRET_TRACKING_POSSIBLE = false;
 
 // +++++ Sound +++++
 bool speakerAlertPlaying = false;
 bool SOUND_ENABLED = true;
+bool SOUND_AVAILABLE = false;
+
+// +++++ Interface and Displays +++++
+int displayCycleCount = 0;
+const int MAX_DISPLAY_CYCLES = 4;
+string[] wheelAnimationStates = {"|","/","-","\\"};
 
 #endregion
 
@@ -53,22 +74,39 @@ bool SOUND_ENABLED = true;
 
 public Program() {
     Runtime.UpdateFrequency = UpdateFrequency.Update10; // Set update frequency to every 10 ticks
-
+    registerBlocks();
 }
 
 public void Main(string arg) {
+    // Do block update cycles
+    if (blockUpdateCycleCount++ == CYCLES_FOR_BLOCK_UPDATE) {
+        registerBlocks();
+        blockUpdateCycleCount = 0;
+    }
+    
+    // Part arguments
     if (arg.Length > 0) {
         // Make lowercase for case insensivitivy
         parseArgument(arg.ToLower());
     }
 
     // Do Raycast Tracking
-    if (RAYCASTING_ENABLED) {
+    if (RAYCASTING_ENABLED && RAYCAST_POSSIBLE) {
         runRaycasting();
     }
 
+    // Do Turret Tracking
+    if (TURRET_TRACKING_ENABLED && TURRET_TRACKING_POSSIBLE) {
+        updateTurretTargetInfo();
+    }
+
     // Update speaker block
-    updateSound();
+    if (SOUND_AVAILABLE) {
+        updateSound();
+    }
+
+    // Update echos to programmable block 'display'
+    updateEchos();
 }
 
 void parseArgument(string arg) {
@@ -84,22 +122,31 @@ void parseArgument(string arg) {
             break;
 
         case "tracking_turrets":
-            RAYCASTING_ENABLED = false;
+            if (getFirstDetectedValidTarget()) {
+                RAYCASTING_ENABLED = false;
+                TURRET_TRACKING_ENABLED = true;
+                TARGET_LOCK = true;
+            }
             break;
         case "tracking_raycast":
             targetInfo = RaycastScanForTarget(Cameras, RAYCAST_SCAN_DEGREE_DEVIATION, RAYCAST_SCAN_RADIUS);
             if (targetInfo.IsEmpty() == false && isValidTarget(targetInfo)) { // Only enable tracking if a valid targetInfo is locked
                 RAYCASTING_ENABLED = true;
+                TURRET_TRACKING_ENABLED = false;
                 TARGET_LOCK = true;
                 timeSinceLastRaycast = 0;
             }
             break;
         case "tracking_disable":
             RAYCASTING_ENABLED = false;
+            TURRET_TRACKING_ENABLED = false;
             TARGET_LOCK = false;
             break;
+
         case "aimbot_missiles":
+            break;
         case "aimbot_gatlings":
+            break;
 
         case "sound_enable":
             SOUND_ENABLED = true;
@@ -119,14 +166,18 @@ void parseArgument(string arg) {
 
 void registerBlocks() {
     // Get Reference Control Block
+    bool foundReference = false;
     List<IMyShipController> Controllers = new List<IMyShipController>();
     GridTerminalSystem.GetBlocksOfType(Controllers);
     foreach(IMyShipController Controller in Controllers) {
         if (Controller.CustomName.ToLower().Contains(REF_CONTROLLER_TAG)) {
             ReferenceControl = Controller;
+            foundReference = true;
             break;
         }
     }
+    if (!foundReference) HAS_REFERENCE_CONTROLLER = false;
+    else HAS_REFERENCE_CONTROLLER = true;
 
     // Register Cameras
     Base6Directions.Direction Ref_Forward = ReferenceControl.Orientation.Forward;
@@ -134,21 +185,53 @@ void registerBlocks() {
     Cameras = new List<IMyCameraBlock>(); // Reset camera list
     GridTerminalSystem.GetBlocksOfType(AllCameras);
     foreach(IMyCameraBlock Camera in AllCameras) { // Only get forward facing cameras
-        if (Camera.Orientation.Forward != Ref_Forward) {
+        if (Camera.Orientation.Forward == Ref_Forward) {
             Cameras.Add(Camera);
         }
     }
+    if (Cameras.Count >= 0) {
+        RAYCAST_POSSIBLE = true;
+        SetCameraRaycastingState(Cameras, true); // Enable raycasting on all availible cameras
+    }
+    else RAYCAST_POSSIBLE = false;
 
     // Get Targeting Speaker Block
+    bool foundSpeaker = false;
     List<IMySoundBlock> Speakers = new List<IMySoundBlock>();
     GridTerminalSystem.GetBlocksOfType(Speakers);
     foreach(IMySoundBlock Speaker in Speakers) {
         if (Speaker.CustomName.ToLower().Contains(TARG_SPEAKER_TAG)) {
             TargetingSpeaker = Speaker;
+            foundSpeaker = true;
             break;
         }
     }
-    
+    if (foundSpeaker) SOUND_AVAILABLE = true;
+    else SOUND_AVAILABLE = false;
+
+    // Get Targeting Designator Turret(s)
+    DesignatorTurrets = new List<IMyLargeTurretBase>(); // Reset Turret List
+    List<IMyLargeTurretBase> Turrets = new List<IMyLargeTurretBase>();
+    GridTerminalSystem.GetBlocksOfType(Turrets);
+    foreach(IMyLargeTurretBase Turret in Turrets) {
+        if (Turret.CustomName.ToLower().Contains(TURRET_DESIGNATOR_TAG)) {
+            DesignatorTurrets.Add(Turret);
+        }
+    }
+    if (DesignatorTurrets.Count > 0) TURRET_TRACKING_POSSIBLE = true;
+    else TURRET_TRACKING_POSSIBLE = false;
+
+    // Get gyroscopes
+    GridTerminalSystem.GetBlocksOfType(Gyros);
+
+    // Check for if system is operational
+    if (foundReference && Gyros.Count > 0) {
+        if (TURRET_TRACKING_POSSIBLE || RAYCAST_POSSIBLE) {
+            systemOperational = true;
+        }
+        else systemOperational = false;
+    }
+    else systemOperational = false;
 }
 
 #endregion
@@ -204,6 +287,7 @@ MyDetectedEntityInfo RaycastScanForTarget(List<IMyCameraBlock> Cameras, float de
     // Scan in a grid
     for (int i = -gridRadius; i <= gridRadius; i++) {
         for (int j = -gridRadius; i <= gridRadius; i++) {
+            if (i==0 && j==0) continue; // Already did forward scan
             RaycastResult = Cameras[camIndex++].Raycast(MAX_RAYCAST_RANGE, i*degreeDeviation, j*degreeDeviation);
             if (camIndex == Cameras.Count) camIndex = 0;
             if (!RaycastResult.IsEmpty()) {
@@ -258,6 +342,64 @@ bool isValidTarget(MyDetectedEntityInfo entity) {
             return false;
     }
 
+    // Check Relations
+    switch(entity.Relationship) {
+        case MyRelationsBetweenPlayerAndBlock.Owner:
+        case MyRelationsBetweenPlayerAndBlock.Friends:
+        case MyRelationsBetweenPlayerAndBlock.FactionShare:
+            if (TARGET_FRIENDLYS) break;
+            else return false;
+        case MyRelationsBetweenPlayerAndBlock.Neutral:
+            if (TARGET_NEUTRALS) break;
+            else return false;
+        case MyRelationsBetweenPlayerAndBlock.NoOwnership:
+        case MyRelationsBetweenPlayerAndBlock.Enemies:
+            break;
+    }
+
+    return true;
+}
+
+#endregion
+
+#region Turret Tracking
+
+bool getFirstDetectedValidTarget() {
+    // Just get info from first turret that detects a target
+    foreach(IMyLargeTurretBase Turret in DesignatorTurrets) {
+        if (Turret.HasTarget) {
+            if (isValidTurretTarget(Turret.GetTargetedEntity())) {
+                targetInfo = Turret.GetTargetedEntity();
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void updateTurretTargetInfo() {
+    bool foundTarget = false;
+    // Just get info from first turret that detects our target
+    foreach(IMyLargeTurretBase Turret in DesignatorTurrets) {
+        if (Turret.HasTarget) {
+            // Check if same target
+            if (Turret.GetTargetedEntity().EntityId == targetInfo.EntityId) {
+                prevTargetInfo = targetInfo;
+                targetInfo = Turret.GetTargetedEntity();
+                foundTarget = true;
+                break;
+            }
+        }
+        Turret.ResetTargetingToDefault();
+    }
+
+    if (!foundTarget) {
+        TARGET_LOCK = false;
+        TURRET_TRACKING_ENABLED = false;
+    }
+}
+
+bool isValidTurretTarget(MyDetectedEntityInfo entity) {
     // Check Relations
     switch(entity.Relationship) {
         case MyRelationsBetweenPlayerAndBlock.Owner:
@@ -639,6 +781,36 @@ void enableSound() {
 
 void disableSound() {
     TargetingSpeaker.ApplyAction("StopSound");
+}
+
+#endregion
+
+#region Debug and Interface Feedback
+
+void updateEchos() {
+    if (displayCycleCount == MAX_DISPLAY_CYCLES) displayCycleCount = 0;
+
+    // Do title and little animation thingy
+    Echo("Aimbot Targeting System " + wheelAnimationStates[displayCycleCount]);
+
+    // Report Registered Block Counts
+    Echo("+++++ Blocks Registered: +++++");
+    Echo(Cameras.Count.ToString() + " Raycast Cameras");
+    Echo(DesignatorTurrets.Count.ToString() + " Designator Turrets");
+    Echo(Gyros.Count.ToString() + " Gyroscopes");
+    Echo("Has Reference Controller? " + ((HAS_REFERENCE_CONTROLLER) ? "Yes" : "No"));
+    Echo("Has Speaker? " + ((SOUND_AVAILABLE) ? "Yes" : "No"));
+
+    // Report System Status
+    Echo("\n+++++ Systems: ++++++");
+    Echo((systemOperational) ? "ATS is Operational" : "ATS is Offline");
+    Echo((RAYCAST_POSSIBLE) ? "Can Raycast" : "Cannot Raycast");
+    Echo((TURRET_TRACKING_POSSIBLE) ? "Can Turret Track" : "Cannot Turret Track");
+
+    Echo("\nLast Execution Duration: " + Runtime.LastRunTimeMs + " ms");
+
+
+    displayCycleCount++;
 }
 
 #endregion
