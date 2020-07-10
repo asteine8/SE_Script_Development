@@ -1,17 +1,42 @@
+/**
+ * Aimbot Targeting System
+ * Rain42 7-10-2020
+ * 
+ * This script is cute and does cute things like blowing holes in the sides of other
+ * grids so they're less cute and therefore at the end you will be the cutest. Please
+ * use responsibly.
+ */
+
 #region User Variables
 
+// +++++ Decaying PID Gyro Control +++++
+float P_TERM = 5F;
+float I_TERM = 1.5F;
+float D_TERM = 0.2F;
+float INTEGRAL_DECAY = 0.85; // Percent of integral to take to next PID cycle
+
+double ROTATION_GAIN = 1;
+double ROLL_GAIN = 1;
+double MAX_ANGULAR_VELOCITY = 5;
+
 // +++++ General +++++
-bool TARGET_NEUTRALS = false; // Can aim at neutrals
+bool TARGET_NEUTRALS = false; // Can aim at neutrals (This script will aim at unowned grids regardless of this setting)
 bool TARGET_FRIENDLYS = false; // Can aim at friendlies
 
 double GAME_MAX_SPEED = 100; // Max Speed in map (Just put the fasted speed here) (m/s)
+
+// Note: Cycles happen at 6Hz (every ~0.1667 seconds)
+const int CYCLES_FOR_BLOCK_UPDATE = 36; // How many cycles to wait betwen re-registering blocks
 
 // +++++ Block Tags +++++
 // Text that block names MUST contain to be tagged
 const string REF_CONTROLLER_TAG = "<reference>";
 const string TARG_SPEAKER_TAG = "<targ_speaker>";
 const string TURRET_DESIGNATOR_TAG = "<designator>";
-const string LCD_TAG = "<lcd>";
+
+// +++++ Default Weapon Settings +++++
+const double DEFAULT_MUZZLE_VELOCITY = 200; // m/s (200m/s for rockets, 400m/s for gatlings)
+WEAPON_TYPE DEFAULT_WEAPON_TYPE = WEAPON_TYPE.ROCKET; // WEAPON_TYPE.GATLING is better suited for most modded weapons
 
 // +++++ Raycasting +++++
 float RAYCAST_SCAN_DEGREE_DEVIATION = 0.2F; // Degree deviation between raycasts in a raycast scan. Set small for fighters!
@@ -20,6 +45,10 @@ double MAX_RAYCAST_RANGE = 1000; // Maximum distance a camera can raycast (meter
 int RAYCASTING_PERIOD = 2; // How many calls to wait between raycasting
 
 #endregion
+
+// =========================================================================================
+//            Do not touch below this point unless u know what you're doing...
+// =========================================================================================
 
 #region Program Variables
 
@@ -38,12 +67,17 @@ const double UPDATES_PER_SECOND = 6;
 bool systemOperational = false; // The BIG one!
 
 int blockUpdateCycleCount = 0;
-const int CYCLES_FOR_BLOCK_UPDATE = 36;
 
 bool TARGET_LOCK = false; // If we have a target lock
 bool AIMBOT_ENABLED = false; // If we are doing gyro control or not
 
+// +++++ Weapon Settings +++++
 enum WEAPON_TYPE {GATLING, ROCKET};
+double MUZZLE_VELOCITY = DEFAULT_MUZZLE_VELOCITY;
+WEAPON_TYPE SELECTED_WEAPON_TYPE;
+
+const double MISSILE_VELOCITY = 200;
+const double GATLING_VELOCITY = 400;
 
 // +++++ Raycasting +++++
 MyDetectedEntityInfo targetInfo;
@@ -68,6 +102,64 @@ int displayCycleCount = 0;
 const int MAX_DISPLAY_CYCLES = 4;
 string[] wheelAnimationStates = {"|","/","-","\\"};
 
+// +++++ Gyro Control +++++
+
+// Barebones Vector3 PID Controller. Does things
+class PID3 {
+    public Vector3 PrevError;
+    public Vector3 PrevIError;
+    public float iterationTime = 0.167F; // Seconds
+
+    public float pTerm;
+    public float dTerm;
+    public float iTerm;
+
+    public float decayTerm;
+
+    private Vector3 IError;
+
+    public PID3(float pT, float iT, float dT) {
+        pTerm = pT;
+        iTerm = iT;
+        dTerm = dT;
+
+        PrevIError = Vector3.Zero;
+        PrevError = Vector3.Zero;
+
+        decayTerm = 1F; // No decay
+    }
+
+    public PID3(float pT, float iT, float dT, float decayT) {
+        pTerm = pT;
+        iTerm = iT;
+        dTerm = dT;
+
+        PrevIError = Vector3.Zero;
+        PrevError = Vector3.Zero;
+
+        decayTerm = decayT; // No decay
+    }
+
+    public Vector3 CalcResponse(Vector3 CurrentError) {
+        Vector3 output = Vector3.Zero;
+
+        // Porportional Term:
+        output += CurrentError * pTerm;
+        // Derivative Term:
+        output += ((CurrentError - PrevError) / iterationTime) * dTerm;
+        // Integral Term:
+        IError = PrevIError + (CurrentError * iterationTime);
+        PrevIError = decayTerm * IError; // Decay integral error
+        output += IError * iTerm;
+
+        PrevError = CurrentError;
+        return output;
+    }
+}
+
+PID3 pidController;
+
+
 #endregion
 
 #region Main Program
@@ -75,6 +167,15 @@ string[] wheelAnimationStates = {"|","/","-","\\"};
 public Program() {
     Runtime.UpdateFrequency = UpdateFrequency.Update10; // Set update frequency to every 10 ticks
     registerBlocks();
+
+    // Do some defaulting
+    SELECTED_WEAPON_TYPE = DEFAULT_WEAPON_TYPE;
+    
+    // Disable Gyro Overrides
+    SetGyroOverrides(Gyros, false);
+
+    // Create PID Controller
+    pidController = new PID3(P_TERM, I_TERM, D_TERM);
 }
 
 public void Main(string arg) {
@@ -83,6 +184,9 @@ public void Main(string arg) {
         registerBlocks();
         blockUpdateCycleCount = 0;
     }
+
+    // Why do anything if the system no longer works?
+    if (systemOperational == false) return;
     
     // Part arguments
     if (arg.Length > 0) {
@@ -100,6 +204,10 @@ public void Main(string arg) {
         updateTurretTargetInfo();
     }
 
+    if (AIMBOT_ENABLED && Gyros.Count > 0) {
+        rotateToTarget();
+    }
+
     // Update speaker block
     if (SOUND_AVAILABLE) {
         updateSound();
@@ -113,15 +221,19 @@ void parseArgument(string arg) {
     switch(arg) {
         case "aimbot_enable":
             AIMBOT_ENABLED = true;
+            SetGyroOverrides(Gyros, true);
             break;
         case "aimbot_disable":
             AIMBOT_ENABLED = false;
+            SetGyroOverrides(Gyros, false);
             break;
         case "aimbot_toggle":
             AIMBOT_ENABLED = (AIMBOT_ENABLED) ? false : true;
+            SetGyroOverrides(Gyros, AIMBOT_ENABLED);
             break;
 
         case "tracking_turrets":
+            if (!TURRET_TRACKING_POSSIBLE) break;
             if (getFirstDetectedValidTarget()) {
                 RAYCASTING_ENABLED = false;
                 TURRET_TRACKING_ENABLED = true;
@@ -129,6 +241,7 @@ void parseArgument(string arg) {
             }
             break;
         case "tracking_raycast":
+            if (!RAYCAST_POSSIBLE) break;
             targetInfo = RaycastScanForTarget(Cameras, RAYCAST_SCAN_DEGREE_DEVIATION, RAYCAST_SCAN_RADIUS);
             if (targetInfo.IsEmpty() == false && isValidTarget(targetInfo)) { // Only enable tracking if a valid targetInfo is locked
                 RAYCASTING_ENABLED = true;
@@ -144,8 +257,12 @@ void parseArgument(string arg) {
             break;
 
         case "aimbot_missiles":
+            SELECTED_WEAPON_TYPE = WEAPON_TYPE.ROCKET;
+            MUZZLE_VELOCITY = MISSILE_VELOCITY;
             break;
         case "aimbot_gatlings":
+            SELECTED_WEAPON_TYPE = WEAPON_TYPE.GATLING;
+            MUZZLE_VELOCITY = GATLING_VELOCITY;
             break;
 
         case "sound_enable":
@@ -370,6 +487,7 @@ bool getFirstDetectedValidTarget() {
         if (Turret.HasTarget) {
             if (isValidTurretTarget(Turret.GetTargetedEntity())) {
                 targetInfo = Turret.GetTargetedEntity();
+                prevTargetInfo = targetInfo;
                 return true;
             }
         }
@@ -747,6 +865,126 @@ bool isValidTurretTarget(MyDetectedEntityInfo entity) {
 
 #region Gyro Control
 
+void rotateToTarget() {
+    // Get Gravity Vector (if any)
+    bool inGravity = false;
+    Vector3D gravity = ReferenceControl.GetNaturalGravity();
+    if (gravity.LengthSquared() > 0) { // Use squared to avoid sqrt here
+        inGravity = true;
+        // Normalize gravity vector
+        gravity = gravity / gravity.Length();
+    }
+
+    // Get targeting location
+    Vector3D InterceptCoords = GetInterceptPoint(
+            ReferenceControl,
+            targetInfo,
+            prevTargetInfo,
+            SELECTED_WEAPON_TYPE,
+            MUZZLE_VELOCITY);
+
+    // Execute turning
+    GyroTurn6(
+            InterceptCoords,
+            ROTATION_GAIN,
+            Gyros,
+            ReferenceControl,
+            0,
+            MAX_ANGULAR_VELOCITY);
+}
+
+/* Modified Gyro Rotation Script:
+    Base code from RDav.
+    Modified to use quaternions instead of a target position
+*/
+void TurnToQuaternion(QuaternionD TargetO, List<IMyGyro> Gyros, IMyShipController REF_RC, double GAIN, double RollGain, double MAXANGULARVELOCITY) {
+
+    Quaternion TargetOrientation = new Quaternion((float)TargetO.X,(float)TargetO.Y,(float)TargetO.Z,(float)TargetO.W);
+
+    // Detect Forward, Up
+    Quaternion Quat_Two = Quaternion.CreateFromForwardUp(REF_RC.WorldMatrix.Forward, REF_RC.WorldMatrix.Up);
+    var InvQuat = Quaternion.Inverse(Quat_Two);
+
+    double ROLLANGLE = QuaternionToYawPitchRoll(InvQuat * TargetOrientation).X; // Get roll angle to target quaternion
+
+    //Create And Use Inverse Quatinion
+    Vector3D DirectionVector = Vector3D.Transform(Vector3D.Forward, TargetOrientation); // Target vector
+
+    Vector3D RCReferenceFrameVector = Vector3D.Transform(DirectionVector, InvQuat); // Target Vector In Terms Of RC Block
+
+    //Convert To Local Azimuth And Elevation
+    double ShipForwardAzimuth = 0; double ShipForwardElevation = 0;
+    Vector3D.GetAzimuthAndElevation(RCReferenceFrameVector, out ShipForwardAzimuth, out ShipForwardElevation);
+
+    //Does Some Rotations To Provide For any Gyro-Orientation
+    MatrixD RC_Matrix = REF_RC.WorldMatrix.GetOrientation();
+    Vector3 Vector = Vector3.Transform((new Vector3D(ShipForwardElevation, ShipForwardAzimuth, ROLLANGLE)), RC_Matrix); //Converts To World
+
+    Vector = pidController.CalcResponse(Vector);
+
+    for (int i = 0; i < Gyros.Count; i++) {
+        Vector3 TRANS_VECT = Vector3.Transform(Vector, Matrix.Transpose(Gyros[i].WorldMatrix.GetOrientation()));  //Converts To Gyro Local
+
+        //Applies To Scenario
+        Gyros[i].Pitch = (float)MathHelper.Clamp((-TRANS_VECT.X * GAIN), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
+        Gyros[i].Yaw = (float)MathHelper.Clamp(((-TRANS_VECT.Y) * GAIN), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
+        Gyros[i].Roll = (float)MathHelper.Clamp(((-TRANS_VECT.Z) * RollGain), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
+    }
+}
+
+void GyroTurn6(Vector3D TARGET, double GAIN, List<IMyGyro> Gyros, IMyShipController REF_RC, double ROLLANGLE,double MAXANGULARVELOCITY) {
+    
+
+    //Detect Forward, Up & Pos
+    Vector3D ShipForward = REF_RC.WorldMatrix.Forward;
+    Vector3D ShipUp = REF_RC.WorldMatrix.Up;
+    Vector3D ShipPos = REF_RC.GetPosition();
+
+    //Create And Use Inverse Quatinion                   
+    Quaternion Quat_Two = Quaternion.CreateFromForwardUp(ShipForward, ShipUp);
+    var InvQuat = Quaternion.Inverse(Quat_Two);
+    Vector3D DirectionVector = Vector3D.Normalize(TARGET - ShipPos); //RealWorld Target Vector
+    Vector3D RCReferenceFrameVector = Vector3D.Transform(DirectionVector, InvQuat); //Target Vector In Terms Of RC Block
+
+    //Convert To Local Azimuth And Elevation
+    double ShipForwardAzimuth = 0; double ShipForwardElevation = 0;
+    Vector3D.GetAzimuthAndElevation(RCReferenceFrameVector, out ShipForwardAzimuth, out ShipForwardElevation);
+
+    //Does Some Rotations To Provide For any Gyro-Orientation
+    var RC_Matrix = REF_RC.WorldMatrix.GetOrientation();
+    var Vector = Vector3.Transform((new Vector3D(ShipForwardElevation, ShipForwardAzimuth, ROLLANGLE)), RC_Matrix); //Converts To World
+
+    Vector = pidController.CalcResponse(Vector);
+
+    for (int i = 0; i < Gyros.Count; i++) {
+        var TRANS_VECT = Vector3.Transform(Vector, Matrix.Transpose(Gyros[i].WorldMatrix.GetOrientation()));  //Converts To Gyro Local
+
+        //Applies To Scenario
+        Gyros[i].Pitch = (float)MathHelper.Clamp((-TRANS_VECT.X * GAIN), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
+        Gyros[i].Yaw = (float)MathHelper.Clamp(((-TRANS_VECT.Y) * GAIN), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
+        Gyros[i].Roll = (float)MathHelper.Clamp(((-TRANS_VECT.Z) * GAIN), -MAXANGULARVELOCITY, MAXANGULARVELOCITY);
+    }
+}
+
+Vector3 QuaternionToYawPitchRoll(Quaternion quat) {
+    double q0 = (double)quat.W;
+    double q1 = (double)quat.X;
+    double q2 = (double)quat.Y;
+    double q3 = (double)quat.Z;
+
+    double Roll = Math.Atan2(2*(q0*q1+q2*q3), 1 - 2*(q1*q1+q2*q2));
+    double Pitch = Math.Asin(2*(q0*q2-q3*q1));
+    double Yaw = Math.Atan2(2*(q0*q3+q1*q2), 1 - 2*(q2*q2+q3*q3));
+
+    return new Vector3((float)Yaw, (float)Pitch, (float)Roll);
+}
+
+void SetGyroOverrides(List<IMyGyro> Gyros, bool state) {
+    for (int i = 0; i < Gyros.Count; i++) {
+        Gyros[i].GyroOverride = state;
+    }
+}
+
 #endregion
 
 #region Sound Control
@@ -814,3 +1052,4 @@ void updateEchos() {
 }
 
 #endregion
+
