@@ -14,7 +14,7 @@ public void Main(string argument) {
 
         if(information.HitPosition.HasValue) {
 
-            string stuff = Vector3D.Distance(camera.GetPosition(), information.HitPosition.Value).ToString("0.00");
+            string stuff = information.HitPosition.Value.ToString("0.00");
 
             stuff += "\n" + information.Relationship.ToString();
             stuff += "\n" + information.Name.ToString();
