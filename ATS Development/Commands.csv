@@ -1,0 +1,16 @@
+Argument,Function
+tracking_turrets,Enables tracking through any turrets on the grid. Disables raycast tracking.
+tracking_raycast,Fires a raycast scan and enables raycast tracking if a target is hit. Disables turret tracking.
+tracking_disable,Disables all tracking modes
+,
+aimbot_enable,Enables gyro control for the aimbot only while tracking is active
+aimbot_disable,Disables gyro control for the aimbot
+aimbot_toggle,Toggles gyro control for the aimbot
+,
+aimbot_missiles,Sets the aimbot lead tracking for missiles
+aimbot_gatlings,Sets the aimbot lead tracking for gatling guns
+aimbot_custom XXX,Sets the aimbot lead tracking to a projectile muzzle velocity of XXX (Should be an integer value in m/s)
+,
+sound_enable,Enables tracking alert sound
+sound_disable,Disables tracking alert sound
+sound_toggle,Toggles tracking alert sound
