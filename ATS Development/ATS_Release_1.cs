@@ -219,10 +219,12 @@ public void Main(string arg) {
         if (TARGET_LOCK && !GYRO_OVERRIDE) {
             ResetGyroOverrides(Gyros);
             SetGyroOverrides(Gyros, true);
+            GYRO_OVERRIDE = true;
         }
         else if (!TARGET_LOCK && GYRO_OVERRIDE) {
             ResetGyroOverrides(Gyros);
             SetGyroOverrides(Gyros, false);
+            GYRO_OVERRIDE = false;
         }
     }
 
