@@ -32,13 +32,6 @@ double GAME_MAX_SPEED = 350; // Max Speed in map (Just put the fasted speed here
 
 const int CYCLES_FOR_BLOCK_UPDATE = 36; // How many cycles to wait betwen re-registering blocks
 
-// +++++ Block Tags +++++
-// Text that block names MUST contain to be tagged
-const string REF_CONTROLLER_TAG = "<reference>";
-const string TARG_SPEAKER_TAG = "<targ_speaker>";
-const string TURRET_DESIGNATOR_TAG = "<designator>";
-const string PID_LCD_TAG = "<pid_lcd>";
-
 // +++++ Default Weapon Settings +++++
 const double DEFAULT_MUZZLE_VELOCITY = 200; // m/s (200m/s for rockets, 400m/s for gatlings)
 WEAPON_TYPE DEFAULT_WEAPON_TYPE = WEAPON_TYPE.ROCKET; // WEAPON_TYPE.GATLING is better suited for most modded weapons
@@ -47,7 +40,7 @@ WEAPON_TYPE DEFAULT_WEAPON_TYPE = WEAPON_TYPE.ROCKET; // WEAPON_TYPE.GATLING is 
 float RAYCAST_SCAN_DEGREE_DEVIATION = 0.3F; // Degree deviation between raycasts in a raycast scan. Set small for fighters!
 int RAYCAST_SCAN_RADIUS = 2; // "Radius" of the square of raycast scans (ie: a radius of two creates a 3x3 raycast scan grid)
 double MAX_RAYCAST_RANGE = 2500; // Maximum distance a camera can raycast (meters)
-int RAYCASTING_PERIOD = 0; // How many calls to wait between raycasting
+int RAYCASTING_PERIOD = 1; // How many calls to wait between raycasting
 
 #endregion
 
@@ -65,6 +58,13 @@ List<IMyGyro> Gyros = new List<IMyGyro>();
 IMyTextPanel PIDLcd;
 IMyShipController ReferenceControl; bool HAS_REFERENCE_CONTROLLER = false;
 IMySoundBlock TargetingSpeaker;
+
+// +++++ Block Tags +++++
+// Text that block names MUST contain to be tagged
+const string REF_CONTROLLER_TAG = "<reference>";
+const string TARG_SPEAKER_TAG = "<targ_speaker>";
+const string TURRET_DESIGNATOR_TAG = "<designator>";
+const string PID_LCD_TAG = "<pid_lcd>";
 
 // +++++ General +++++
 bool systemOperational = false; // The BIG one!
