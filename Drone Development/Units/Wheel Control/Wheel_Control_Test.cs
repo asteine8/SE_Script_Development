@@ -110,10 +110,6 @@ void Main(string arg) {
     
 }
 
-void RegisterBlocks() {
-
-}
-
 #region Helper Functions
 
 class HelperFunctions {
