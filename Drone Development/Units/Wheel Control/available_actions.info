@@ -1,0 +1,40 @@
+(Action) -- OnOff
+(Action) -- OnOff_On
+(Action) -- OnOff_Off
+(Action) -- ShowOnHUD
+(Action) -- ShowOnHUD_On
+(Action) -- ShowOnHUD_Off
+(Action) -- IncreaseWeld speed
+(Action) -- DecreaseWeld speed
+(Action) -- Force weld
+(Action) -- IncreaseSafetyDetach
+(Action) -- DecreaseSafetyDetach
+(Action) -- ShareInertiaTensor
+(Action) -- Add Top Part
+(Action) -- Steering
+(Action) -- Propulsion
+(Action) -- Braking
+(Action) -- AirShock
+(Action) -- InvertSteering
+(Action) -- InvertPropulsion
+(Action) -- IncreaseMaxSteerAngle
+(Action) -- DecreaseMaxSteerAngle
+(Action) -- ResetMaxSteerAngle
+(Action) -- IncreasePower
+(Action) -- DecreasePower
+(Action) -- IncreaseStrength
+(Action) -- DecreaseStrength
+(Action) -- IncreaseHeight
+(Action) -- DecreaseHeight
+(Action) -- ResetHeight
+(Action) -- IncreaseFriction
+(Action) -- DecreaseFriction
+(Action) -- IncreaseSpeed Limit
+(Action) -- DecreaseSpeed Limit
+(Action) -- ResetSpeed Limit
+(Action) -- IncreasePropulsion override
+(Action) -- DecreasePropulsion override
+(Action) -- ResetPropulsion override
+(Action) -- IncreaseSteer override
+(Action) -- DecreaseSteer override
+(Action) -- ResetSteer override

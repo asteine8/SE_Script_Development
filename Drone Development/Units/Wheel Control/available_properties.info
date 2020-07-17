@@ -1,0 +1,24 @@
+(Property) -- OnOff | Type: Boolean
+(Property) -- ShowInTerminal | Type: Boolean
+(Property) -- ShowInInventory | Type: Boolean
+(Property) -- ShowInToolbarConfig | Type: Boolean
+(Property) -- Name | Type: StringBuilder
+(Property) -- ShowOnHUD | Type: Boolean
+(Property) -- Weld speed | Type: Single
+(Property) -- Force weld | Type: Boolean
+(Property) -- SafetyDetach | Type: Single
+(Property) -- ShareInertiaTensor | Type: Boolean
+(Property) -- Steering | Type: Boolean
+(Property) -- Propulsion | Type: Boolean
+(Property) -- Braking | Type: Boolean
+(Property) -- AirShock | Type: Boolean
+(Property) -- InvertSteering | Type: Boolean
+(Property) -- InvertPropulsion | Type: Boolean
+(Property) -- MaxSteerAngle | Type: Single
+(Property) -- Power | Type: Single
+(Property) -- Strength | Type: Single
+(Property) -- Height | Type: Single
+(Property) -- Friction | Type: Single
+(Property) -- Speed Limit | Type: Single
+(Property) -- Propulsion override | Type: Single
+(Property) -- Steer override | Type: Single
